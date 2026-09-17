@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT & Claude Personal Chat Cleaner
 // @namespace    local.vanick
-// @version      1.2.0
+// @version      1.3.0
 // @description  Reviews likely personal conversations on ChatGPT and Claude and deletes only selected chats.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -316,69 +316,478 @@
     await sleep(250);
   }
 
+  function detectDarkMode() {
+    const background = getComputedStyle(document.body).backgroundColor;
+    const values = background.match(/[\d.]+/g);
+
+    if (values && values.length >= 3) {
+      const [r, g, b] = values.slice(0, 3).map(Number);
+      return (0.299 * r + 0.587 * g + 0.114 * b) < 128;
+    }
+
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false;
+  }
+
+  function cleanerTheme() {
+    const dark = detectDarkMode();
+
+    return dark ? {
+      panel: '#18181b',
+      surface: '#222226',
+      surfaceHover: '#29292e',
+      border: '#34343a',
+      borderStrong: '#45454d',
+      text: '#f4f4f5',
+      muted: '#a1a1aa',
+      subtle: '#71717a',
+      accent: '#93a4ff',
+      accentSoft: 'rgba(147,164,255,.13)',
+      accentBorder: 'rgba(147,164,255,.34)',
+      danger: '#f87171',
+      dangerHover: '#ef4444',
+      dangerSoft: 'rgba(248,113,113,.12)',
+      success: '#86efac',
+      successSoft: 'rgba(134,239,172,.10)',
+      shadow: '0 24px 80px rgba(0,0,0,.48)',
+      overlay: 'rgba(8,8,10,.70)'
+    } : {
+      panel: '#ffffff',
+      surface: '#f7f7f8',
+      surfaceHover: '#f1f1f3',
+      border: '#e4e4e7',
+      borderStrong: '#d4d4d8',
+      text: '#18181b',
+      muted: '#71717a',
+      subtle: '#a1a1aa',
+      accent: '#5968d9',
+      accentSoft: 'rgba(89,104,217,.08)',
+      accentBorder: 'rgba(89,104,217,.24)',
+      danger: '#dc2626',
+      dangerHover: '#b91c1c',
+      dangerSoft: 'rgba(220,38,38,.07)',
+      success: '#15803d',
+      successSoft: 'rgba(21,128,61,.07)',
+      shadow: '0 24px 80px rgba(24,24,27,.18)',
+      overlay: 'rgba(24,24,27,.48)'
+    };
+  }
+
   function makeOverlay(chats) {
     document.getElementById('vanick-cleaner-overlay')?.remove();
 
     const current = platform();
+    const theme = cleanerTheme();
     const overlay = document.createElement('div');
     overlay.id = 'vanick-cleaner-overlay';
     overlay.style.cssText = `
-      position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.62);
-      display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;
+      --vc-panel:${theme.panel};
+      --vc-surface:${theme.surface};
+      --vc-surface-hover:${theme.surfaceHover};
+      --vc-border:${theme.border};
+      --vc-border-strong:${theme.borderStrong};
+      --vc-text:${theme.text};
+      --vc-muted:${theme.muted};
+      --vc-subtle:${theme.subtle};
+      --vc-accent:${theme.accent};
+      --vc-accent-soft:${theme.accentSoft};
+      --vc-accent-border:${theme.accentBorder};
+      --vc-danger:${theme.danger};
+      --vc-danger-hover:${theme.dangerHover};
+      --vc-danger-soft:${theme.dangerSoft};
+      --vc-success:${theme.success};
+      --vc-success-soft:${theme.successSoft};
+      position:fixed;
+      inset:0;
+      z-index:2147483647;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      background:${theme.overlay};
+      backdrop-filter:blur(8px);
+      -webkit-backdrop-filter:blur(8px);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     `;
 
-    const box = document.createElement('div');
-    box.style.cssText = `
-      width:min(820px,94vw);max-height:84vh;overflow:auto;background:#fff;color:#111;
-      border-radius:16px;padding:20px;box-shadow:0 18px 70px rgba(0,0,0,.35);
+    const style = document.createElement('style');
+    style.textContent = `
+      #vanick-cleaner-overlay *{box-sizing:border-box}
+      #vanick-cleaner-overlay .vc-panel{
+        width:min(860px,96vw);
+        max-height:min(86vh,900px);
+        display:flex;
+        flex-direction:column;
+        overflow:hidden;
+        color:var(--vc-text);
+        background:var(--vc-panel);
+        border:1px solid var(--vc-border);
+        border-radius:20px;
+        box-shadow:${theme.shadow};
+      }
+      #vanick-cleaner-overlay .vc-header{
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:18px;
+        padding:22px 24px 18px;
+        border-bottom:1px solid var(--vc-border);
+      }
+      #vanick-cleaner-overlay .vc-brand{
+        display:flex;
+        align-items:flex-start;
+        gap:13px;
+        min-width:0;
+      }
+      #vanick-cleaner-overlay .vc-icon{
+        width:42px;
+        height:42px;
+        flex:0 0 auto;
+        display:grid;
+        place-items:center;
+        border:1px solid var(--vc-accent-border);
+        border-radius:12px;
+        background:var(--vc-accent-soft);
+        font-size:20px;
+      }
+      #vanick-cleaner-overlay .vc-title-row{
+        display:flex;
+        align-items:center;
+        gap:9px;
+        flex-wrap:wrap;
+        margin:1px 0 4px;
+      }
+      #vanick-cleaner-overlay .vc-title{
+        font-size:20px;
+        line-height:1.25;
+        font-weight:750;
+        letter-spacing:-.02em;
+      }
+      #vanick-cleaner-overlay .vc-platform{
+        display:inline-flex;
+        align-items:center;
+        height:22px;
+        padding:0 8px;
+        border:1px solid var(--vc-border);
+        border-radius:999px;
+        color:var(--vc-muted);
+        background:var(--vc-surface);
+        font-size:11px;
+        font-weight:700;
+        letter-spacing:.02em;
+      }
+      #vanick-cleaner-overlay .vc-subtitle{
+        max-width:650px;
+        color:var(--vc-muted);
+        font-size:12.5px;
+        line-height:1.55;
+      }
+      #vanick-cleaner-overlay .vc-icon-button{
+        width:34px;
+        height:34px;
+        flex:0 0 auto;
+        display:grid;
+        place-items:center;
+        border:1px solid transparent;
+        border-radius:10px;
+        color:var(--vc-muted);
+        background:transparent;
+        font-size:20px;
+        line-height:1;
+        cursor:pointer;
+        transition:background .15s ease,border-color .15s ease,color .15s ease;
+      }
+      #vanick-cleaner-overlay .vc-icon-button:hover{
+        color:var(--vc-text);
+        background:var(--vc-surface);
+        border-color:var(--vc-border);
+      }
+      #vanick-cleaner-overlay .vc-toolbar{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+        flex-wrap:wrap;
+        padding:12px 24px;
+        border-bottom:1px solid var(--vc-border);
+        background:var(--vc-panel);
+      }
+      #vanick-cleaner-overlay .vc-summary{
+        color:var(--vc-muted);
+        font-size:12px;
+        font-weight:650;
+      }
+      #vanick-cleaner-overlay .vc-toolbar-actions{
+        display:flex;
+        gap:7px;
+        flex-wrap:wrap;
+      }
+      #vanick-cleaner-overlay .vc-list-wrap{
+        min-height:120px;
+        overflow:auto;
+        padding:14px 16px 16px;
+        scrollbar-color:var(--vc-border-strong) transparent;
+      }
+      #vanick-cleaner-overlay .vc-list{
+        display:grid;
+        gap:8px;
+      }
+      #vanick-cleaner-overlay .vc-row{
+        display:grid;
+        grid-template-columns:24px minmax(0,1fr);
+        gap:10px;
+        align-items:start;
+        padding:12px 13px;
+        border:1px solid var(--vc-border);
+        border-radius:12px;
+        background:var(--vc-surface);
+        cursor:pointer;
+        transition:background .14s ease,border-color .14s ease,transform .14s ease;
+      }
+      #vanick-cleaner-overlay .vc-row:hover{
+        background:var(--vc-surface-hover);
+        border-color:var(--vc-border-strong);
+      }
+      #vanick-cleaner-overlay .vc-row.vc-selected{
+        border-color:var(--vc-accent-border);
+        background:var(--vc-accent-soft);
+      }
+      #vanick-cleaner-overlay .vc-checkbox{
+        width:17px;
+        height:17px;
+        margin:2px 0 0;
+        accent-color:var(--vc-accent);
+        cursor:pointer;
+      }
+      #vanick-cleaner-overlay .vc-chat-head{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        min-width:0;
+      }
+      #vanick-cleaner-overlay .vc-chat-title{
+        min-width:0;
+        overflow:hidden;
+        text-overflow:ellipsis;
+        white-space:nowrap;
+        color:var(--vc-text);
+        font-size:13.5px;
+        line-height:1.35;
+        font-weight:680;
+      }
+      #vanick-cleaner-overlay .vc-pill{
+        flex:0 0 auto;
+        display:inline-flex;
+        align-items:center;
+        height:21px;
+        padding:0 7px;
+        border-radius:999px;
+        font-size:10.5px;
+        line-height:1;
+        font-weight:750;
+      }
+      #vanick-cleaner-overlay .vc-pill-personal{
+        color:var(--vc-accent);
+        border:1px solid var(--vc-accent-border);
+        background:var(--vc-accent-soft);
+      }
+      #vanick-cleaner-overlay .vc-pill-protected{
+        color:var(--vc-success);
+        border:1px solid color-mix(in srgb,var(--vc-success) 30%,transparent);
+        background:var(--vc-success-soft);
+      }
+      #vanick-cleaner-overlay .vc-pill-review{
+        color:var(--vc-muted);
+        border:1px solid var(--vc-border);
+        background:var(--vc-panel);
+      }
+      #vanick-cleaner-overlay .vc-detail{
+        margin-top:4px;
+        color:var(--vc-muted);
+        font-size:11.5px;
+        line-height:1.4;
+      }
+      #vanick-cleaner-overlay .vc-empty{
+        margin:18px 8px;
+        padding:28px 18px;
+        text-align:center;
+        color:var(--vc-muted);
+        border:1px dashed var(--vc-border-strong);
+        border-radius:14px;
+        background:var(--vc-surface);
+        font-size:13px;
+      }
+      #vanick-cleaner-overlay .vc-footer{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:14px;
+        flex-wrap:wrap;
+        padding:14px 20px 16px;
+        border-top:1px solid var(--vc-border);
+        background:var(--vc-panel);
+      }
+      #vanick-cleaner-overlay .vc-status{
+        flex:1 1 300px;
+        min-height:18px;
+        color:var(--vc-muted);
+        font-size:11.5px;
+        line-height:1.45;
+      }
+      #vanick-cleaner-overlay .vc-status[data-state="error"]{color:var(--vc-danger)}
+      #vanick-cleaner-overlay .vc-status[data-state="success"]{color:var(--vc-success)}
+      #vanick-cleaner-overlay .vc-footer-actions{
+        display:flex;
+        gap:8px;
+        margin-left:auto;
+      }
+      #vanick-cleaner-overlay .vc-button{
+        min-height:34px;
+        padding:7px 11px;
+        border-radius:9px;
+        border:1px solid var(--vc-border);
+        color:var(--vc-text);
+        background:var(--vc-surface);
+        font:inherit;
+        font-size:11.5px;
+        line-height:1;
+        font-weight:700;
+        cursor:pointer;
+        transition:background .15s ease,border-color .15s ease,transform .1s ease,opacity .15s ease;
+      }
+      #vanick-cleaner-overlay .vc-button:hover:not(:disabled){
+        background:var(--vc-surface-hover);
+        border-color:var(--vc-border-strong);
+      }
+      #vanick-cleaner-overlay .vc-button:active:not(:disabled){transform:translateY(1px)}
+      #vanick-cleaner-overlay .vc-button:disabled{opacity:.45;cursor:not-allowed}
+      #vanick-cleaner-overlay .vc-button-danger{
+        color:#fff;
+        border-color:var(--vc-danger);
+        background:var(--vc-danger);
+      }
+      #vanick-cleaner-overlay .vc-button-danger:hover:not(:disabled){
+        border-color:var(--vc-danger-hover);
+        background:var(--vc-danger-hover);
+      }
+      @media (max-width:640px){
+        #vanick-cleaner-overlay{padding:10px}
+        #vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}
+        #vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}
+        #vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}
+        #vanick-cleaner-overlay .vc-list-wrap{padding:10px}
+        #vanick-cleaner-overlay .vc-footer{padding:12px}
+        #vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}
+        #vanick-cleaner-overlay .vc-chat-title{white-space:normal}
+      }
     `;
+    overlay.appendChild(style);
 
-    const heading = document.createElement('div');
-    heading.innerHTML = `
-      <div style="font-size:22px;font-weight:750;margin-bottom:6px">${current.name} Chat Cleaner</div>
-      <div style="font-size:13px;color:#555;margin-bottom:14px">
-        Only chats currently loaded in the sidebar are shown. Likely personal chats are preselected.
-        Protected school and coding titles are left unchecked. Review selections before deleting.
+    const panel = document.createElement('div');
+    panel.className = 'vc-panel';
+
+    const header = document.createElement('div');
+    header.className = 'vc-header';
+
+    const brand = document.createElement('div');
+    brand.className = 'vc-brand';
+
+    const icon = document.createElement('div');
+    icon.className = 'vc-icon';
+    icon.textContent = '🧹';
+
+    const headingText = document.createElement('div');
+    headingText.style.minWidth = '0';
+    headingText.innerHTML = `
+      <div class="vc-title-row">
+        <div class="vc-title">Chat Cleaner</div>
+        <span class="vc-platform">${escapeHtml(current.name)}</span>
+      </div>
+      <div class="vc-subtitle">
+        Review loaded conversations before deleting. Personal matches are preselected while protected school and coding chats stay unchecked.
       </div>
     `;
-    box.appendChild(heading);
 
-    if (!chats.length) {
-      const empty = document.createElement('div');
-      empty.textContent = 'No loaded chats were found. Open the sidebar and try again.';
-      box.appendChild(empty);
-    }
+    brand.append(icon, headingText);
+
+    const closeIcon = document.createElement('button');
+    closeIcon.type = 'button';
+    closeIcon.className = 'vc-icon-button';
+    closeIcon.setAttribute('aria-label', 'Close');
+    closeIcon.textContent = '×';
+    closeIcon.onclick = () => overlay.remove();
+
+    header.append(brand, closeIcon);
+    panel.appendChild(header);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'vc-toolbar';
+
+    const summary = document.createElement('div');
+    summary.className = 'vc-summary';
+
+    const toolbarActions = document.createElement('div');
+    toolbarActions.className = 'vc-toolbar-actions';
+
+    const listWrap = document.createElement('div');
+    listWrap.className = 'vc-list-wrap';
 
     const list = document.createElement('div');
-    list.style.cssText = 'display:grid;gap:8px;';
+    list.className = 'vc-list';
 
     const rows = [];
+    let remove = null;
+
+    function refreshSelection() {
+      const selected = rows.filter(item => item.checkbox.checked).length;
+      summary.textContent = `${chats.length} loaded · ${selected} selected`;
+
+      for (const item of rows) {
+        item.row.classList.toggle('vc-selected', item.checkbox.checked);
+      }
+
+      if (remove) {
+        remove.textContent = selected ? `Delete selected (${selected})` : 'Delete selected';
+        remove.disabled = selected === 0;
+      }
+    }
 
     for (const chat of chats) {
       const row = document.createElement('label');
-      row.style.cssText = `
-        display:grid;grid-template-columns:26px 1fr;gap:9px;align-items:start;
-        border:1px solid #ddd;border-radius:10px;padding:10px;cursor:pointer;
-      `;
+      row.className = 'vc-row';
 
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
+      checkbox.className = 'vc-checkbox';
       checkbox.checked = chat.likelyPersonal;
-      checkbox.style.marginTop = '3px';
+      checkbox.addEventListener('change', refreshSelection);
 
       const info = document.createElement('div');
-      const matchText = chat.matches.length
-        ? `Matched: ${chat.matches.join(', ')}`
-        : 'No personal keyword match';
-      const protectedText = chat.protectedMatches.length
-        ? ` • Protected: ${chat.protectedMatches.join(', ')}`
-        : '';
+      info.style.minWidth = '0';
+
+      const detailParts = [];
+      if (chat.matches.length) detailParts.push(`Matched: ${chat.matches.join(', ')}`);
+      else detailParts.push('No personal keyword match');
+      if (chat.protectedMatches.length) detailParts.push(`Protected: ${chat.protectedMatches.join(', ')}`);
+
+      const statusClass = chat.protectedMatches.length
+        ? 'vc-pill-protected'
+        : chat.likelyPersonal
+          ? 'vc-pill-personal'
+          : 'vc-pill-review';
+
+      const statusText = chat.protectedMatches.length
+        ? 'Protected'
+        : chat.likelyPersonal
+          ? 'Likely personal'
+          : 'Review';
 
       info.innerHTML = `
-        <div style="font-weight:650">${escapeHtml(chat.title)}</div>
-        <div style="font-size:12px;color:#666;margin-top:3px">
-          ${escapeHtml(matchText + protectedText)}
+        <div class="vc-chat-head">
+          <div class="vc-chat-title">${escapeHtml(chat.title)}</div>
+          <span class="vc-pill ${statusClass}">${statusText}</span>
         </div>
+        <div class="vc-detail">${escapeHtml(detailParts.join(' · '))}</div>
       `;
 
       row.append(checkbox, info);
@@ -386,41 +795,62 @@
       rows.push({ chat, checkbox, row });
     }
 
-    box.appendChild(list);
+    if (!chats.length) {
+      const empty = document.createElement('div');
+      empty.className = 'vc-empty';
+      empty.textContent = 'No loaded chats were found. Open the sidebar and try again.';
+      list.appendChild(empty);
+    }
+
+    listWrap.appendChild(list);
+
+    const selectLikely = button('Select likely', 'secondary');
+    selectLikely.onclick = () => {
+      rows.forEach(item => {
+        item.checkbox.checked = item.chat.likelyPersonal;
+      });
+      refreshSelection();
+    };
+
+    const selectAll = button('Select all', 'secondary');
+    selectAll.onclick = () => {
+      rows.forEach(item => {
+        item.checkbox.checked = true;
+      });
+      refreshSelection();
+    };
+
+    const deselectAll = button('Deselect all', 'secondary');
+    deselectAll.onclick = () => {
+      rows.forEach(item => {
+        item.checkbox.checked = false;
+      });
+      refreshSelection();
+    };
+
+    toolbarActions.append(selectLikely, selectAll, deselectAll);
+    toolbar.append(summary, toolbarActions);
+    panel.append(toolbar, listWrap);
+
+    const footer = document.createElement('div');
+    footer.className = 'vc-footer';
 
     const status = document.createElement('div');
-    status.style.cssText = 'font-size:13px;margin-top:12px;min-height:20px;color:#555;';
-    box.appendChild(status);
+    status.className = 'vc-status';
+    status.textContent = 'Nothing is deleted until you confirm.';
 
-    const actions = document.createElement('div');
-    actions.style.cssText = `
-      display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;position:sticky;bottom:-20px;
-      background:#fff;padding:16px 0 2px;margin-top:10px;
-    `;
+    const footerActions = document.createElement('div');
+    footerActions.className = 'vc-footer-actions';
 
-    const selectLikely = button('Select likely personal', '#eee', '#111');
-    selectLikely.onclick = () => rows.forEach(item => {
-      item.checkbox.checked = item.chat.likelyPersonal;
-    });
-
-    const selectAll = button('Select all', '#eee', '#111');
-    selectAll.onclick = () => rows.forEach(item => {
-      item.checkbox.checked = true;
-    });
-
-    const deselectAll = button('Deselect all', '#eee', '#111');
-    deselectAll.onclick = () => rows.forEach(item => {
-      item.checkbox.checked = false;
-    });
-
-    const close = button('Cancel', '#eee', '#111');
+    const close = button('Cancel', 'secondary');
     close.onclick = () => overlay.remove();
 
-    const remove = button('Delete selected', '#d00', '#fff');
+    remove = button('Delete selected', 'danger');
     remove.onclick = async () => {
       const selected = rows.filter(item => item.checkbox.checked);
 
       if (!selected.length) {
+        status.dataset.state = 'error';
         status.textContent = 'Nothing selected.';
         return;
       }
@@ -430,52 +860,60 @@
       );
       if (!confirmed) return;
 
-      for (const control of [remove, close, selectLikely, selectAll, deselectAll]) {
-        control.disabled = true;
-      }
+      const controls = [remove, close, selectLikely, selectAll, deselectAll];
+      for (const control of controls) control.disabled = true;
 
       let deleted = 0;
       let failed = 0;
       let lastError = '';
 
+      status.dataset.state = '';
       for (const item of selected) {
-        status.textContent = `Deleting ${deleted + failed + 1}/${selected.length}: ${item.chat.title}`;
+        status.textContent = `Deleting ${deleted + failed + 1} of ${selected.length} · ${item.chat.title}`;
 
         try {
           await deleteChat(item.chat);
           deleted++;
-          item.row.style.opacity = '.35';
+          item.row.style.opacity = '.38';
           item.checkbox.checked = false;
         } catch (error) {
           failed++;
           lastError = error instanceof Error ? error.message : String(error);
-          item.row.style.borderColor = '#d00';
+          item.row.style.borderColor = 'var(--vc-danger)';
           console.error('[Chat Cleaner]', item.chat.title, error);
         }
       }
 
-      status.textContent =
-        `Finished: ${deleted} deleted` +
-        (failed ? `, ${failed} failed. Last error: ${lastError}` : '.');
-
-      for (const control of [remove, close, selectLikely, selectAll, deselectAll]) {
-        control.disabled = false;
+      if (failed) {
+        status.dataset.state = 'error';
+        status.textContent = `${deleted} deleted · ${failed} failed · ${lastError}`;
+      } else {
+        status.dataset.state = 'success';
+        status.textContent = `${deleted} chat${deleted === 1 ? '' : 's'} deleted successfully.`;
       }
+
+      for (const control of controls) control.disabled = false;
+      refreshSelection();
     };
 
-    actions.append(selectLikely, selectAll, deselectAll, close, remove);
-    box.appendChild(actions);
-    overlay.appendChild(box);
+    footerActions.append(close, remove);
+    footer.append(status, footerActions);
+    panel.appendChild(footer);
+
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) overlay.remove();
+    });
+
     document.body.appendChild(overlay);
+    refreshSelection();
   }
 
-  function button(text, background, color) {
+  function button(text, variant = 'secondary') {
     const element = document.createElement('button');
+    element.type = 'button';
     element.textContent = text;
-    element.style.cssText = `
-      border:0;border-radius:9px;padding:9px 13px;font-weight:650;
-      cursor:pointer;background:${background};color:${color};
-    `;
+    element.className = `vc-button${variant === 'danger' ? ' vc-button-danger' : ''}`;
     return element;
   }
 
@@ -495,16 +933,44 @@
   function addLauncher() {
     if (document.getElementById('vanick-cleaner-button')) return;
 
+    const theme = cleanerTheme();
     const launcher = document.createElement('button');
     launcher.id = 'vanick-cleaner-button';
-    launcher.textContent = '🧹 Clean Recents';
+    launcher.type = 'button';
+    launcher.textContent = '🧹 Chat Cleaner';
     launcher.title = `Review likely personal ${platform().name} chats`;
     launcher.style.cssText = `
-      position:fixed;right:18px;bottom:18px;z-index:2147483646;
-      border:1px solid rgba(0,0,0,.18);border-radius:999px;padding:10px 14px;
-      background:#fff;color:#111;font-weight:700;box-shadow:0 5px 22px rgba(0,0,0,.22);
+      position:fixed;
+      right:18px;
+      bottom:18px;
+      z-index:2147483646;
+      display:inline-flex;
+      align-items:center;
+      gap:7px;
+      min-height:38px;
+      padding:8px 13px;
+      border:1px solid ${theme.borderStrong};
+      border-radius:999px;
+      color:${theme.text};
+      background:${theme.panel};
+      box-shadow:0 8px 30px rgba(0,0,0,.18);
+      font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      font-size:12px;
+      font-weight:750;
+      letter-spacing:-.01em;
       cursor:pointer;
+      transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;
     `;
+    launcher.onmouseenter = () => {
+      launcher.style.transform = 'translateY(-1px)';
+      launcher.style.borderColor = theme.accent;
+      launcher.style.boxShadow = '0 10px 34px rgba(0,0,0,.24)';
+    };
+    launcher.onmouseleave = () => {
+      launcher.style.transform = '';
+      launcher.style.borderColor = theme.borderStrong;
+      launcher.style.boxShadow = '0 8px 30px rgba(0,0,0,.18)';
+    };
     launcher.onclick = scan;
     document.body.appendChild(launcher);
   }
