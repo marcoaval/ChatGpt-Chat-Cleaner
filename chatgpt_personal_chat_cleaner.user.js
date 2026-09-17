@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Personal Chat Cleaner (Review First)
 // @namespace    local.vanick
-// @version      1.0.0
+// @version      1.0.1
 // @description  Finds likely personal ChatGPT chats by title, lets you review them, then deletes only the ones you select.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -12,22 +12,17 @@
   'use strict';
 
   const PERSONAL_KEYWORDS = [
-    'health', 'doctor', 'medical', 'pain', 'hurt', 'injury', 'ankle', 'stomach',
-    'blood', 'cough', 'breathing', 'wheeze', 'skin', 'nose', 'ear',
-    'choking', 'sick', 'symptom', 'vet',
-
-    'relationship', 'girlfriend', 'boyfriend', 'dating', 'kiss', 'family',
-    'mom', 'dad', 'birthday', 'personal',
-
-    'cat', 'kitten', 'carl', 'pet', 'litter', 'flea', 'food', 'feeding',
-
-    'apartment', 'housing', 'address', 'esa', 'job', 'walmart', 'heb',
-    'membership', 'barber', 'review'
+    'health', 'medical', 'doctor', 'symptom', 'injury',
+    'relationship', 'dating', 'family', 'personal',
+    'pet', 'housing', 'apartment', 'address',
+    'job', 'work', 'membership', 'finance',
+    'travel', 'shopping', 'appointment'
   ];
 
   const PROTECTED_KEYWORDS = [
-    'isc', 'class', 'course', 'syllabus', 'assignment', 'discussion', 'lab',
-    'utsa', 'utrgv', 'excel', 'github', 'python', 'powershell', 'bash',
+    'class', 'course', 'syllabus', 'assignment', 'discussion', 'lab',
+    'school', 'college', 'university', 'excel', 'github',
+    'python', 'powershell', 'bash', 'coding', 'programming',
     'cybersecurity', 'project', 'resume', 'study'
   ];
 
