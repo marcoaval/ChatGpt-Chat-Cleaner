@@ -11,27 +11,20 @@
 (() => {
   'use strict';
 
-  // EDIT THESE WORDS to match what YOU consider "personal".
   const PERSONAL_KEYWORDS = [
-    // health / body
     'health', 'doctor', 'medical', 'pain', 'hurt', 'injury', 'ankle', 'stomach',
-    'diarrhea', 'blood', 'cough', 'breathing', 'wheeze', 'skin', 'nose', 'ear',
+    'blood', 'cough', 'breathing', 'wheeze', 'skin', 'nose', 'ear',
     'choking', 'sick', 'symptom', 'vet',
 
-    // relationships / family / private life
     'relationship', 'girlfriend', 'boyfriend', 'dating', 'kiss', 'family',
     'mom', 'dad', 'birthday', 'personal',
 
-    // pets
     'cat', 'kitten', 'carl', 'pet', 'litter', 'flea', 'food', 'feeding',
 
-    // housing / work / personal logistics
     'apartment', 'housing', 'address', 'esa', 'job', 'walmart', 'heb',
     'membership', 'barber', 'review'
   ];
 
-  // Chats containing these terms are NOT auto-selected, even if they also hit
-  // a personal keyword. They can still be manually checked in the review list.
   const PROTECTED_KEYWORDS = [
     'isc', 'class', 'course', 'syllabus', 'assignment', 'discussion', 'lab',
     'utsa', 'utrgv', 'excel', 'github', 'python', 'powershell', 'bash',
@@ -90,7 +83,6 @@
   }
 
   async function openChatMenu(chat) {
-    // Re-find it because deleting earlier rows can invalidate old DOM references.
     const link = [...document.querySelectorAll('a[href*="/c/"]')]
       .find(a => (a.getAttribute('href') || '') === chat.href);
 
