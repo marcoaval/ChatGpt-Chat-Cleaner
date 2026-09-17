@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT & Claude Personal Chat Cleaner
 // @namespace    local.vanick
-// @version      1.1.3
+// @version      1.2.0
 // @description  Reviews likely personal conversations on ChatGPT and Claude and deletes only selected chats.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -107,6 +107,10 @@
     return normalize(`${element?.textContent || ''} ${element?.getAttribute?.('aria-label') || ''} ${element?.getAttribute?.('title') || ''}`);
   }
 
+  function cleanerContains(element) {
+    return Boolean(document.getElementById('vanick-cleaner-overlay')?.contains(element));
+  }
+
   function rowCandidates(link) {
     const candidates = [];
     let node = link;
@@ -162,7 +166,7 @@
     }) || null;
   }
 
-  async function waitFor(getter, timeout = 2200, interval = 80) {
+  async function waitFor(getter, timeout = 2500, interval = 80) {
     const end = Date.now() + timeout;
 
     while (Date.now() < end) {
@@ -181,97 +185,135 @@
     const row = getRow(link);
     if (!row) throw new Error('Could not locate this chat row.');
 
+    row.scrollIntoView({ block: 'nearest' });
     fireHover(row);
     fireHover(link);
-    row.scrollIntoView({ block: 'nearest' });
     await sleep(450);
 
     const menuButton = await waitFor(() => menuButtonFromRow(row) || globalMenuButtonNearRow(row));
     if (!menuButton) throw new Error('Could not find the chat options button.');
 
-    menuButton.click();
-    await sleep(250);
+    activate(menuButton);
+    await sleep(300);
   }
 
-  function isDeleteElement(element) {
-    const cleaner = document.getElementById('vanick-cleaner-overlay');
-    if (cleaner?.contains(element)) return false;
+  function actionableAncestor(element) {
+    let node = element;
 
-    const values = [
-      normalize(element.textContent).replace(/\s+/g, ' '),
-      normalize(element.getAttribute?.('aria-label')).replace(/\s+/g, ' '),
-      normalize(element.getAttribute?.('title')).replace(/\s+/g, ' ')
-    ].filter(Boolean);
+    for (let depth = 0; node && depth < 7; depth++, node = node.parentElement) {
+      if (cleanerContains(node)) return null;
 
-    return values.some(value =>
-      /^(delete|delete chat|delete conversation)(?:\s+[a-z0-9])?$/.test(value)
+      const role = normalize(node.getAttribute?.('role'));
+      const tag = node.tagName;
+      const slot = normalize(node.getAttribute?.('data-slot'));
+      const hasTabIndex = node.hasAttribute?.('tabindex');
+
+      if (
+        tag === 'BUTTON' ||
+        tag === 'A' ||
+        role === 'menuitem' ||
+        role === 'option' ||
+        role === 'button' ||
+        hasTabIndex ||
+        slot.includes('menu') ||
+        slot.includes('dropdown')
+      ) {
+        return node;
+      }
+    }
+
+    return element.parentElement || element;
+  }
+
+  function exactTextCandidates(text, root = document.body) {
+    const target = normalize(text);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const candidates = [];
+    let node;
+
+    while ((node = walker.nextNode())) {
+      if (normalize(node.nodeValue) !== target) continue;
+
+      const parent = node.parentElement;
+      if (!parent || !visible(parent) || cleanerContains(parent)) continue;
+
+      const action = actionableAncestor(parent);
+      if (!action || !visible(action) || cleanerContains(action)) continue;
+
+      candidates.push(action);
+    }
+
+    return [...new Set(candidates)];
+  }
+
+  function menuDeleteAction() {
+    const candidates = exactTextCandidates('delete');
+    const menuCandidate = candidates.find(element =>
+      element.closest('[role="menu"], [role="menuitem"], [data-radix-menu-content], [data-slot*="menu"], [data-slot*="dropdown"]')
     );
+
+    return menuCandidate || candidates.find(element => !element.closest('[role="dialog"], [role="alertdialog"]')) || null;
   }
 
-  function deleteElements(root = document) {
-    const selectors = [
-      '[role="menuitem"]',
-      '[role="option"]',
-      '[data-radix-collection-item]',
-      '[data-slot*="menu-item"]',
-      '[data-slot*="dropdown"]',
-      'button',
-      'div',
-      'span'
-    ];
+  function confirmationDeleteAction() {
+    const candidates = exactTextCandidates('delete');
+    const dialogCandidate = candidates.find(element =>
+      element.closest('[role="dialog"], [role="alertdialog"]')
+    );
 
-    return [...root.querySelectorAll(selectors.join(','))]
-      .filter(visible)
-      .filter(isDeleteElement)
-      .sort((a, b) => a.children.length - b.children.length);
+    if (dialogCandidate) return dialogCandidate;
+
+    return candidates.find(element => {
+      if (element.closest('[role="menu"], [role="menuitem"]')) return false;
+      return element.tagName === 'BUTTON' || normalize(element.getAttribute?.('role')) === 'button';
+    }) || null;
   }
 
-  async function findDeleteAction() {
-    return waitFor(() => deleteElements(document)[0], 2500, 80);
-  }
+  function activate(element) {
+    const rect = element.getBoundingClientRect();
+    const options = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      button: 0,
+      buttons: 1,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2
+    };
 
-  function findDialog() {
-    const dialogs = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')]
-      .filter(visible)
-      .filter(element => !document.getElementById('vanick-cleaner-overlay')?.contains(element));
+    try {
+      element.dispatchEvent(new PointerEvent('pointerdown', options));
+      element.dispatchEvent(new MouseEvent('mousedown', options));
+      element.dispatchEvent(new PointerEvent('pointerup', { ...options, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...options, buttons: 0 }));
+    } catch (_) {
+      element.dispatchEvent(new MouseEvent('mousedown', options));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...options, buttons: 0 }));
+    }
 
-    const explicit = dialogs.find(element => /delete|conversation|chat/i.test(element.textContent || ''));
-    if (explicit) return explicit;
-
-    return [...document.querySelectorAll('[data-state="open"]')]
-      .filter(visible)
-      .filter(element => !document.getElementById('vanick-cleaner-overlay')?.contains(element))
-      .find(element => deleteElements(element).length > 0) || null;
-  }
-
-  async function findConfirmDelete() {
-    return waitFor(() => {
-      const dialog = findDialog();
-      if (!dialog) return null;
-
-      return deleteElements(dialog).find(element => element.tagName === 'BUTTON') ||
-             deleteElements(dialog)[0] ||
-             null;
-    }, 2800, 80);
+    element.click();
   }
 
   async function deleteChat(chat) {
     await openChatMenu(chat);
 
-    const deleteAction = await findDeleteAction();
-    if (!deleteAction) {
-      document.body.click();
-      throw new Error('Could not find Delete in the chat menu.');
+    const deleteAction = await waitFor(menuDeleteAction, 3000, 80);
+    if (!deleteAction) throw new Error('Claude menu opened, but the Delete command was not found.');
+
+    activate(deleteAction);
+
+    const confirmButton = await waitFor(confirmationDeleteAction, 3500, 100);
+    if (!confirmButton) {
+      if (menuDeleteAction()) throw new Error('Delete command was found, but Claude did not open the confirmation dialog.');
+      throw new Error('Delete confirmation button was not found.');
     }
 
-    deleteAction.click();
-    await sleep(300);
+    activate(confirmButton);
 
-    const confirmButton = await findConfirmDelete();
-    if (!confirmButton) throw new Error('Could not find the confirmation Delete button.');
+    const removed = await waitFor(() => !findChatLink(chat.href), 5000, 120);
+    if (!removed) throw new Error('Delete was confirmed, but the chat remained visible in the sidebar.');
 
-    confirmButton.click();
-    await sleep(platform().name === 'Claude' ? 1100 : 800);
+    await sleep(250);
   }
 
   function makeOverlay(chats) {
@@ -287,7 +329,7 @@
 
     const box = document.createElement('div');
     box.style.cssText = `
-      width:min(760px,92vw);max-height:82vh;overflow:auto;background:#fff;color:#111;
+      width:min(820px,94vw);max-height:84vh;overflow:auto;background:#fff;color:#111;
       border-radius:16px;padding:20px;box-shadow:0 18px 70px rgba(0,0,0,.35);
     `;
 
@@ -352,17 +394,27 @@
 
     const actions = document.createElement('div');
     actions.style.cssText = `
-      display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:-20px;
+      display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;position:sticky;bottom:-20px;
       background:#fff;padding:16px 0 2px;margin-top:10px;
     `;
-
-    const close = button('Cancel', '#eee', '#111');
-    close.onclick = () => overlay.remove();
 
     const selectLikely = button('Select likely personal', '#eee', '#111');
     selectLikely.onclick = () => rows.forEach(item => {
       item.checkbox.checked = item.chat.likelyPersonal;
     });
+
+    const selectAll = button('Select all', '#eee', '#111');
+    selectAll.onclick = () => rows.forEach(item => {
+      item.checkbox.checked = true;
+    });
+
+    const deselectAll = button('Deselect all', '#eee', '#111');
+    deselectAll.onclick = () => rows.forEach(item => {
+      item.checkbox.checked = false;
+    });
+
+    const close = button('Cancel', '#eee', '#111');
+    close.onclick = () => overlay.remove();
 
     const remove = button('Delete selected', '#d00', '#fff');
     remove.onclick = async () => {
@@ -378,12 +430,13 @@
       );
       if (!confirmed) return;
 
-      remove.disabled = true;
-      close.disabled = true;
-      selectLikely.disabled = true;
+      for (const control of [remove, close, selectLikely, selectAll, deselectAll]) {
+        control.disabled = true;
+      }
 
       let deleted = 0;
       let failed = 0;
+      let lastError = '';
 
       for (const item of selected) {
         status.textContent = `Deleting ${deleted + failed + 1}/${selected.length}: ${item.chat.title}`;
@@ -395,6 +448,7 @@
           item.checkbox.checked = false;
         } catch (error) {
           failed++;
+          lastError = error instanceof Error ? error.message : String(error);
           item.row.style.borderColor = '#d00';
           console.error('[Chat Cleaner]', item.chat.title, error);
         }
@@ -402,14 +456,14 @@
 
       status.textContent =
         `Finished: ${deleted} deleted` +
-        (failed ? `, ${failed} failed. Failed rows are outlined in red.` : '.');
+        (failed ? `, ${failed} failed. Last error: ${lastError}` : '.');
 
-      remove.disabled = false;
-      close.disabled = false;
-      selectLikely.disabled = false;
+      for (const control of [remove, close, selectLikely, selectAll, deselectAll]) {
+        control.disabled = false;
+      }
     };
 
-    actions.append(selectLikely, close, remove);
+    actions.append(selectLikely, selectAll, deselectAll, close, remove);
     box.appendChild(actions);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
