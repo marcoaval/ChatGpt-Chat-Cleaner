@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         ChatGPT & Claude Personal Chat Cleaner
 // @namespace    local.vanick
-// @version      1.1.0
+// @version      1.1.1
 // @description  Reviews likely personal conversations on ChatGPT and Claude and deletes only selected chats.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @match        https://claude.ai/*
+// @updateURL    https://raw.githubusercontent.com/marcoaval/ChatGpt-Chat-Cleaner/main/chatgpt_personal_chat_cleaner.user.js
+// @downloadURL  https://raw.githubusercontent.com/marcoaval/ChatGpt-Chat-Cleaner/main/chatgpt_personal_chat_cleaner.user.js
 // @grant        none
 // ==/UserScript==
 
