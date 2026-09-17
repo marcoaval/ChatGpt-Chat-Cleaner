@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT & Claude Personal Chat Cleaner
 // @namespace    local.vanick
-// @version      1.1.2
+// @version      1.1.3
 // @description  Reviews likely personal conversations on ChatGPT and Claude and deletes only selected chats.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -193,7 +193,22 @@
     await sleep(250);
   }
 
-  function exactDeleteElements(root = document) {
+  function isDeleteElement(element) {
+    const cleaner = document.getElementById('vanick-cleaner-overlay');
+    if (cleaner?.contains(element)) return false;
+
+    const values = [
+      normalize(element.textContent).replace(/\s+/g, ' '),
+      normalize(element.getAttribute?.('aria-label')).replace(/\s+/g, ' '),
+      normalize(element.getAttribute?.('title')).replace(/\s+/g, ' ')
+    ].filter(Boolean);
+
+    return values.some(value =>
+      /^(delete|delete chat|delete conversation)(?:\s+[a-z0-9])?$/.test(value)
+    );
+  }
+
+  function deleteElements(root = document) {
     const selectors = [
       '[role="menuitem"]',
       '[role="option"]',
@@ -207,32 +222,36 @@
 
     return [...root.querySelectorAll(selectors.join(','))]
       .filter(visible)
-      .filter(element => {
-        const text = elementText(element);
-        return text === 'delete' || text === 'delete chat' || text === 'delete conversation';
-      })
+      .filter(isDeleteElement)
       .sort((a, b) => a.children.length - b.children.length);
   }
 
   async function findDeleteAction() {
-    return waitFor(() => exactDeleteElements(document)[0], 2500, 80);
+    return waitFor(() => deleteElements(document)[0], 2500, 80);
   }
 
   function findDialog() {
-    return [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], [data-state="open"]')]
+    const dialogs = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')]
       .filter(visible)
-      .find(element => /delete|conversation|chat/i.test(element.textContent || '')) || null;
+      .filter(element => !document.getElementById('vanick-cleaner-overlay')?.contains(element));
+
+    const explicit = dialogs.find(element => /delete|conversation|chat/i.test(element.textContent || ''));
+    if (explicit) return explicit;
+
+    return [...document.querySelectorAll('[data-state="open"]')]
+      .filter(visible)
+      .filter(element => !document.getElementById('vanick-cleaner-overlay')?.contains(element))
+      .find(element => deleteElements(element).length > 0) || null;
   }
 
   async function findConfirmDelete() {
     return waitFor(() => {
       const dialog = findDialog();
-      if (dialog) {
-        const button = exactDeleteElements(dialog).find(element => element.tagName === 'BUTTON') || exactDeleteElements(dialog)[0];
-        if (button) return button;
-      }
+      if (!dialog) return null;
 
-      return exactDeleteElements(document).find(element => element.tagName === 'BUTTON') || null;
+      return deleteElements(dialog).find(element => element.tagName === 'BUTTON') ||
+             deleteElements(dialog)[0] ||
+             null;
     }, 2800, 80);
   }
 
