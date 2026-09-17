@@ -112,6 +112,16 @@ It does not send your chat titles to another server.
 
 1.0.0
 
+## Commercial Use
+
+This project is free to use for personal, educational, research, and other non-commercial purposes.
+
+If you want to use this project in a paid product, service, business, monetized project, or anything else that makes money, you need my permission first.
+
+Commercial licensing, royalties, or revenue-sharing terms would be handled separately in writing.
+
+See the `LICENSE` file for the full terms.
+
 ## Disclaimer
 
 This is just a personal project I made for myself and decided to put on GitHub.
