@@ -1,20 +1,21 @@
 // ==UserScript==
 // @name         ChatGPT & Claude Personal Chat Cleaner
 // @namespace    local.vanick
-// @version      1.3.0
+// @version      1.4.0
 // @description  Reviews likely personal conversations on ChatGPT and Claude and deletes only selected chats.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @match        https://claude.ai/*
 // @updateURL    https://raw.githubusercontent.com/marcoaval/ChatGpt-Chat-Cleaner/main/chatgpt_personal_chat_cleaner.user.js
 // @downloadURL  https://raw.githubusercontent.com/marcoaval/ChatGpt-Chat-Cleaner/main/chatgpt_personal_chat_cleaner.user.js
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
 // ==/UserScript==
 
 (() => {
   'use strict';
 
-  const PERSONAL_KEYWORDS = [
+  const DEFAULT_SUGGESTED_FILTERS = [
     'health', 'medical', 'doctor', 'symptom', 'injury',
     'relationship', 'dating', 'family', 'personal',
     'pet', 'housing', 'apartment', 'address',
@@ -22,12 +23,14 @@
     'travel', 'shopping', 'appointment'
   ];
 
-  const PROTECTED_KEYWORDS = [
+  const DEFAULT_PROTECTED_FILTERS = [
     'class', 'course', 'syllabus', 'assignment', 'discussion', 'lab',
     'school', 'college', 'university', 'excel', 'github',
     'python', 'powershell', 'bash', 'coding', 'programming',
     'cybersecurity', 'project', 'resume', 'study'
   ];
+
+  const FILTER_STORAGE_KEY = 'vanick-chat-cleaner-filters-v1';
 
   const PLATFORMS = {
     chatgpt: {
@@ -46,6 +49,46 @@
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   const normalize = (value) => (value || '').trim().toLowerCase();
+
+  function cleanFilterList(values) {
+    if (!Array.isArray(values)) return [];
+    return [...new Set(values.map(value => normalize(value)).filter(Boolean))];
+  }
+
+  function defaultFilters() {
+    return {
+      suggested: [...DEFAULT_SUGGESTED_FILTERS],
+      protected: [...DEFAULT_PROTECTED_FILTERS]
+    };
+  }
+
+  function loadFilters() {
+    const fallback = defaultFilters();
+
+    try {
+      const raw = GM_getValue(FILTER_STORAGE_KEY, '');
+      if (!raw) return fallback;
+
+      const stored = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return {
+        suggested: Array.isArray(stored?.suggested) ? cleanFilterList(stored.suggested) : fallback.suggested,
+        protected: Array.isArray(stored?.protected) ? cleanFilterList(stored.protected) : fallback.protected
+      };
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function saveFilters(filters) {
+    activeFilters = {
+      suggested: cleanFilterList(filters.suggested),
+      protected: cleanFilterList(filters.protected)
+    };
+
+    GM_setValue(FILTER_STORAGE_KEY, JSON.stringify(activeFilters));
+  }
+
+  let activeFilters = loadFilters();
 
   function platform() {
     const host = location.hostname.toLowerCase();
@@ -81,8 +124,8 @@
 
   function classify(chat) {
     const title = normalize(chat.title);
-    const matches = PERSONAL_KEYWORDS.filter(keyword => title.includes(normalize(keyword)));
-    const protectedMatches = PROTECTED_KEYWORDS.filter(keyword => title.includes(normalize(keyword)));
+    const matches = activeFilters.suggested.filter(keyword => title.includes(normalize(keyword)));
+    const protectedMatches = activeFilters.protected.filter(keyword => title.includes(normalize(keyword)));
 
     return {
       ...chat,
@@ -412,274 +455,64 @@
     const style = document.createElement('style');
     style.textContent = `
       #vanick-cleaner-overlay *{box-sizing:border-box}
-      #vanick-cleaner-overlay .vc-panel{
-        width:min(860px,96vw);
-        max-height:min(86vh,900px);
-        display:flex;
-        flex-direction:column;
-        overflow:hidden;
-        color:var(--vc-text);
-        background:var(--vc-panel);
-        border:1px solid var(--vc-border);
-        border-radius:20px;
-        box-shadow:${theme.shadow};
-      }
-      #vanick-cleaner-overlay .vc-header{
-        display:flex;
-        align-items:flex-start;
-        justify-content:space-between;
-        gap:18px;
-        padding:22px 24px 18px;
-        border-bottom:1px solid var(--vc-border);
-      }
-      #vanick-cleaner-overlay .vc-brand{
-        display:flex;
-        align-items:flex-start;
-        gap:13px;
-        min-width:0;
-      }
-      #vanick-cleaner-overlay .vc-icon{
-        width:42px;
-        height:42px;
-        flex:0 0 auto;
-        display:grid;
-        place-items:center;
-        border:1px solid var(--vc-accent-border);
-        border-radius:12px;
-        background:var(--vc-accent-soft);
-        font-size:20px;
-      }
-      #vanick-cleaner-overlay .vc-title-row{
-        display:flex;
-        align-items:center;
-        gap:9px;
-        flex-wrap:wrap;
-        margin:1px 0 4px;
-      }
-      #vanick-cleaner-overlay .vc-title{
-        font-size:20px;
-        line-height:1.25;
-        font-weight:750;
-        letter-spacing:-.02em;
-      }
-      #vanick-cleaner-overlay .vc-platform{
-        display:inline-flex;
-        align-items:center;
-        height:22px;
-        padding:0 8px;
-        border:1px solid var(--vc-border);
-        border-radius:999px;
-        color:var(--vc-muted);
-        background:var(--vc-surface);
-        font-size:11px;
-        font-weight:700;
-        letter-spacing:.02em;
-      }
-      #vanick-cleaner-overlay .vc-subtitle{
-        max-width:650px;
-        color:var(--vc-muted);
-        font-size:12.5px;
-        line-height:1.55;
-      }
-      #vanick-cleaner-overlay .vc-icon-button{
-        width:34px;
-        height:34px;
-        flex:0 0 auto;
-        display:grid;
-        place-items:center;
-        border:1px solid transparent;
-        border-radius:10px;
-        color:var(--vc-muted);
-        background:transparent;
-        font-size:20px;
-        line-height:1;
-        cursor:pointer;
-        transition:background .15s ease,border-color .15s ease,color .15s ease;
-      }
-      #vanick-cleaner-overlay .vc-icon-button:hover{
-        color:var(--vc-text);
-        background:var(--vc-surface);
-        border-color:var(--vc-border);
-      }
-      #vanick-cleaner-overlay .vc-toolbar{
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:12px;
-        flex-wrap:wrap;
-        padding:12px 24px;
-        border-bottom:1px solid var(--vc-border);
-        background:var(--vc-panel);
-      }
-      #vanick-cleaner-overlay .vc-summary{
-        color:var(--vc-muted);
-        font-size:12px;
-        font-weight:650;
-      }
-      #vanick-cleaner-overlay .vc-toolbar-actions{
-        display:flex;
-        gap:7px;
-        flex-wrap:wrap;
-      }
-      #vanick-cleaner-overlay .vc-list-wrap{
-        min-height:120px;
-        overflow:auto;
-        padding:14px 16px 16px;
-        scrollbar-color:var(--vc-border-strong) transparent;
-      }
-      #vanick-cleaner-overlay .vc-list{
-        display:grid;
-        gap:8px;
-      }
-      #vanick-cleaner-overlay .vc-row{
-        display:grid;
-        grid-template-columns:24px minmax(0,1fr);
-        gap:10px;
-        align-items:start;
-        padding:12px 13px;
-        border:1px solid var(--vc-border);
-        border-radius:12px;
-        background:var(--vc-surface);
-        cursor:pointer;
-        transition:background .14s ease,border-color .14s ease,transform .14s ease;
-      }
-      #vanick-cleaner-overlay .vc-row:hover{
-        background:var(--vc-surface-hover);
-        border-color:var(--vc-border-strong);
-      }
-      #vanick-cleaner-overlay .vc-row.vc-selected{
-        border-color:var(--vc-accent-border);
-        background:var(--vc-accent-soft);
-      }
-      #vanick-cleaner-overlay .vc-checkbox{
-        width:17px;
-        height:17px;
-        margin:2px 0 0;
-        accent-color:var(--vc-accent);
-        cursor:pointer;
-      }
-      #vanick-cleaner-overlay .vc-chat-head{
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:10px;
-        min-width:0;
-      }
-      #vanick-cleaner-overlay .vc-chat-title{
-        min-width:0;
-        overflow:hidden;
-        text-overflow:ellipsis;
-        white-space:nowrap;
-        color:var(--vc-text);
-        font-size:13.5px;
-        line-height:1.35;
-        font-weight:680;
-      }
-      #vanick-cleaner-overlay .vc-pill{
-        flex:0 0 auto;
-        display:inline-flex;
-        align-items:center;
-        height:21px;
-        padding:0 7px;
-        border-radius:999px;
-        font-size:10.5px;
-        line-height:1;
-        font-weight:750;
-      }
-      #vanick-cleaner-overlay .vc-pill-personal{
-        color:var(--vc-accent);
-        border:1px solid var(--vc-accent-border);
-        background:var(--vc-accent-soft);
-      }
-      #vanick-cleaner-overlay .vc-pill-protected{
-        color:var(--vc-success);
-        border:1px solid color-mix(in srgb,var(--vc-success) 30%,transparent);
-        background:var(--vc-success-soft);
-      }
-      #vanick-cleaner-overlay .vc-pill-review{
-        color:var(--vc-muted);
-        border:1px solid var(--vc-border);
-        background:var(--vc-panel);
-      }
-      #vanick-cleaner-overlay .vc-detail{
-        margin-top:4px;
-        color:var(--vc-muted);
-        font-size:11.5px;
-        line-height:1.4;
-      }
-      #vanick-cleaner-overlay .vc-empty{
-        margin:18px 8px;
-        padding:28px 18px;
-        text-align:center;
-        color:var(--vc-muted);
-        border:1px dashed var(--vc-border-strong);
-        border-radius:14px;
-        background:var(--vc-surface);
-        font-size:13px;
-      }
-      #vanick-cleaner-overlay .vc-footer{
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:14px;
-        flex-wrap:wrap;
-        padding:14px 20px 16px;
-        border-top:1px solid var(--vc-border);
-        background:var(--vc-panel);
-      }
-      #vanick-cleaner-overlay .vc-status{
-        flex:1 1 300px;
-        min-height:18px;
-        color:var(--vc-muted);
-        font-size:11.5px;
-        line-height:1.45;
-      }
+      #vanick-cleaner-overlay .vc-panel{width:min(860px,96vw);max-height:min(86vh,900px);display:flex;flex-direction:column;overflow:hidden;color:var(--vc-text);background:var(--vc-panel);border:1px solid var(--vc-border);border-radius:20px;box-shadow:${theme.shadow}}
+      #vanick-cleaner-overlay .vc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:22px 24px 18px;border-bottom:1px solid var(--vc-border)}
+      #vanick-cleaner-overlay .vc-brand{display:flex;align-items:flex-start;gap:13px;min-width:0}
+      #vanick-cleaner-overlay .vc-icon{width:42px;height:42px;flex:0 0 auto;display:grid;place-items:center;border:1px solid var(--vc-accent-border);border-radius:12px;background:var(--vc-accent-soft);font-size:20px}
+      #vanick-cleaner-overlay .vc-title-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:1px 0 4px}
+      #vanick-cleaner-overlay .vc-title{font-size:20px;line-height:1.25;font-weight:750;letter-spacing:-.02em}
+      #vanick-cleaner-overlay .vc-platform{display:inline-flex;align-items:center;height:22px;padding:0 8px;border:1px solid var(--vc-border);border-radius:999px;color:var(--vc-muted);background:var(--vc-surface);font-size:11px;font-weight:700;letter-spacing:.02em}
+      #vanick-cleaner-overlay .vc-subtitle{max-width:650px;color:var(--vc-muted);font-size:12.5px;line-height:1.55}
+      #vanick-cleaner-overlay .vc-icon-button{width:34px;height:34px;flex:0 0 auto;display:grid;place-items:center;border:1px solid transparent;border-radius:10px;color:var(--vc-muted);background:transparent;font-size:20px;line-height:1;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease}
+      #vanick-cleaner-overlay .vc-icon-button:hover{color:var(--vc-text);background:var(--vc-surface);border-color:var(--vc-border)}
+      #vanick-cleaner-overlay .vc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 24px;border-bottom:1px solid var(--vc-border);background:var(--vc-panel)}
+      #vanick-cleaner-overlay .vc-summary{color:var(--vc-muted);font-size:12px;font-weight:650}
+      #vanick-cleaner-overlay .vc-toolbar-actions{display:flex;gap:7px;flex-wrap:wrap}
+      #vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager{min-height:120px;overflow:auto;padding:14px 16px 16px;scrollbar-color:var(--vc-border-strong) transparent}
+      #vanick-cleaner-overlay .vc-list{display:grid;gap:8px}
+      #vanick-cleaner-overlay .vc-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;padding:12px 13px;border:1px solid var(--vc-border);border-radius:12px;background:var(--vc-surface);cursor:pointer;transition:background .14s ease,border-color .14s ease,transform .14s ease}
+      #vanick-cleaner-overlay .vc-row:hover{background:var(--vc-surface-hover);border-color:var(--vc-border-strong)}
+      #vanick-cleaner-overlay .vc-row.vc-selected{border-color:var(--vc-accent-border);background:var(--vc-accent-soft)}
+      #vanick-cleaner-overlay .vc-checkbox{width:17px;height:17px;margin:2px 0 0;accent-color:var(--vc-accent);cursor:pointer}
+      #vanick-cleaner-overlay .vc-chat-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+      #vanick-cleaner-overlay .vc-chat-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vc-text);font-size:13.5px;line-height:1.35;font-weight:680}
+      #vanick-cleaner-overlay .vc-pill{flex:0 0 auto;display:inline-flex;align-items:center;height:21px;padding:0 7px;border-radius:999px;font-size:10.5px;line-height:1;font-weight:750}
+      #vanick-cleaner-overlay .vc-pill-personal{color:var(--vc-accent);border:1px solid var(--vc-accent-border);background:var(--vc-accent-soft)}
+      #vanick-cleaner-overlay .vc-pill-protected{color:var(--vc-success);border:1px solid color-mix(in srgb,var(--vc-success) 30%,transparent);background:var(--vc-success-soft)}
+      #vanick-cleaner-overlay .vc-pill-review{color:var(--vc-muted);border:1px solid var(--vc-border);background:var(--vc-panel)}
+      #vanick-cleaner-overlay .vc-detail{margin-top:4px;color:var(--vc-muted);font-size:11.5px;line-height:1.4}
+      #vanick-cleaner-overlay .vc-empty{margin:18px 8px;padding:28px 18px;text-align:center;color:var(--vc-muted);border:1px dashed var(--vc-border-strong);border-radius:14px;background:var(--vc-surface);font-size:13px}
+      #vanick-cleaner-overlay .vc-filter-manager{display:grid;gap:12px}
+      #vanick-cleaner-overlay .vc-filter-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:2px 2px 4px}
+      #vanick-cleaner-overlay .vc-filter-intro-title{color:var(--vc-text);font-size:14px;font-weight:750}
+      #vanick-cleaner-overlay .vc-filter-intro-text{margin-top:3px;max-width:610px;color:var(--vc-muted);font-size:11.5px;line-height:1.5}
+      #vanick-cleaner-overlay .vc-filter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+      #vanick-cleaner-overlay .vc-filter-card{min-width:0;padding:14px;border:1px solid var(--vc-border);border-radius:14px;background:var(--vc-surface)}
+      #vanick-cleaner-overlay .vc-filter-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+      #vanick-cleaner-overlay .vc-filter-card-title{color:var(--vc-text);font-size:13px;font-weight:750}
+      #vanick-cleaner-overlay .vc-filter-count{color:var(--vc-muted);font-size:10.5px;font-weight:700}
+      #vanick-cleaner-overlay .vc-filter-description{min-height:34px;margin-bottom:10px;color:var(--vc-muted);font-size:11px;line-height:1.5}
+      #vanick-cleaner-overlay .vc-filter-input-row{display:flex;gap:7px;margin-bottom:10px}
+      #vanick-cleaner-overlay .vc-input{min-width:0;flex:1 1 auto;height:34px;padding:7px 9px;border:1px solid var(--vc-border);border-radius:9px;outline:none;color:var(--vc-text);background:var(--vc-panel);font:inherit;font-size:11.5px}
+      #vanick-cleaner-overlay .vc-input:focus{border-color:var(--vc-accent);box-shadow:0 0 0 3px var(--vc-accent-soft)}
+      #vanick-cleaner-overlay .vc-chip-list{display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow:auto}
+      #vanick-cleaner-overlay .vc-chip{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%;padding:5px 7px 5px 8px;border:1px solid var(--vc-border);border-radius:999px;color:var(--vc-text);background:var(--vc-panel);font-size:10.5px;line-height:1}
+      #vanick-cleaner-overlay .vc-chip-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      #vanick-cleaner-overlay .vc-chip-remove{width:16px;height:16px;display:grid;place-items:center;flex:0 0 auto;padding:0;border:0;border-radius:999px;color:var(--vc-muted);background:transparent;cursor:pointer;font-size:13px;line-height:1}
+      #vanick-cleaner-overlay .vc-chip-remove:hover{color:var(--vc-danger);background:var(--vc-danger-soft)}
+      #vanick-cleaner-overlay .vc-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 20px 16px;border-top:1px solid var(--vc-border);background:var(--vc-panel)}
+      #vanick-cleaner-overlay .vc-status{flex:1 1 300px;min-height:18px;color:var(--vc-muted);font-size:11.5px;line-height:1.45}
       #vanick-cleaner-overlay .vc-status[data-state="error"]{color:var(--vc-danger)}
       #vanick-cleaner-overlay .vc-status[data-state="success"]{color:var(--vc-success)}
-      #vanick-cleaner-overlay .vc-footer-actions{
-        display:flex;
-        gap:8px;
-        margin-left:auto;
-      }
-      #vanick-cleaner-overlay .vc-button{
-        min-height:34px;
-        padding:7px 11px;
-        border-radius:9px;
-        border:1px solid var(--vc-border);
-        color:var(--vc-text);
-        background:var(--vc-surface);
-        font:inherit;
-        font-size:11.5px;
-        line-height:1;
-        font-weight:700;
-        cursor:pointer;
-        transition:background .15s ease,border-color .15s ease,transform .1s ease,opacity .15s ease;
-      }
-      #vanick-cleaner-overlay .vc-button:hover:not(:disabled){
-        background:var(--vc-surface-hover);
-        border-color:var(--vc-border-strong);
-      }
+      #vanick-cleaner-overlay .vc-footer-actions{display:flex;gap:8px;margin-left:auto}
+      #vanick-cleaner-overlay .vc-button{min-height:34px;padding:7px 11px;border-radius:9px;border:1px solid var(--vc-border);color:var(--vc-text);background:var(--vc-surface);font:inherit;font-size:11.5px;line-height:1;font-weight:700;cursor:pointer;transition:background .15s ease,border-color .15s ease,transform .1s ease,opacity .15s ease}
+      #vanick-cleaner-overlay .vc-button:hover:not(:disabled){background:var(--vc-surface-hover);border-color:var(--vc-border-strong)}
       #vanick-cleaner-overlay .vc-button:active:not(:disabled){transform:translateY(1px)}
       #vanick-cleaner-overlay .vc-button:disabled{opacity:.45;cursor:not-allowed}
-      #vanick-cleaner-overlay .vc-button-danger{
-        color:#fff;
-        border-color:var(--vc-danger);
-        background:var(--vc-danger);
-      }
-      #vanick-cleaner-overlay .vc-button-danger:hover:not(:disabled){
-        border-color:var(--vc-danger-hover);
-        background:var(--vc-danger-hover);
-      }
-      @media (max-width:640px){
-        #vanick-cleaner-overlay{padding:10px}
-        #vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}
-        #vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}
-        #vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}
-        #vanick-cleaner-overlay .vc-list-wrap{padding:10px}
-        #vanick-cleaner-overlay .vc-footer{padding:12px}
-        #vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}
-        #vanick-cleaner-overlay .vc-chat-title{white-space:normal}
-      }
+      #vanick-cleaner-overlay .vc-button-danger{color:#fff;border-color:var(--vc-danger);background:var(--vc-danger)}
+      #vanick-cleaner-overlay .vc-button-danger:hover:not(:disabled){border-color:var(--vc-danger-hover);background:var(--vc-danger-hover)}
+      #vanick-cleaner-overlay .vc-button-accent{color:#fff;border-color:var(--vc-accent);background:var(--vc-accent)}
+      @media (max-width:640px){#vanick-cleaner-overlay{padding:10px}#vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}#vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager{padding:10px}#vanick-cleaner-overlay .vc-filter-grid{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-footer{padding:12px}#vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}#vanick-cleaner-overlay .vc-chat-title{white-space:normal}}
     `;
     overlay.appendChild(style);
 
@@ -699,13 +532,8 @@
     const headingText = document.createElement('div');
     headingText.style.minWidth = '0';
     headingText.innerHTML = `
-      <div class="vc-title-row">
-        <div class="vc-title">Chat Cleaner</div>
-        <span class="vc-platform">${escapeHtml(current.name)}</span>
-      </div>
-      <div class="vc-subtitle">
-        Review loaded conversations before deleting. Personal matches are preselected while protected school and coding chats stay unchecked.
-      </div>
+      <div class="vc-title-row"><div class="vc-title">Chat Cleaner</div><span class="vc-platform">${escapeHtml(current.name)}</span></div>
+      <div class="vc-subtitle">Review loaded conversations before deleting. Chats matching suggested cleanup filters are preselected, while protected filters prevent automatic selection.</div>
     `;
 
     brand.append(icon, headingText);
@@ -735,17 +563,19 @@
     const list = document.createElement('div');
     list.className = 'vc-list';
 
+    const filterManager = document.createElement('div');
+    filterManager.className = 'vc-filter-manager';
+    filterManager.hidden = true;
+
     const rows = [];
     let remove = null;
+    let footer = null;
+    let filterMode = false;
 
     function refreshSelection() {
       const selected = rows.filter(item => item.checkbox.checked).length;
-      summary.textContent = `${chats.length} loaded · ${selected} selected`;
-
-      for (const item of rows) {
-        item.row.classList.toggle('vc-selected', item.checkbox.checked);
-      }
-
+      summary.textContent = filterMode ? `${activeFilters.suggested.length} suggested filters · ${activeFilters.protected.length} protected filters` : `${chats.length} loaded · ${selected} selected`;
+      for (const item of rows) item.row.classList.toggle('vc-selected', item.checkbox.checked);
       if (remove) {
         remove.textContent = selected ? `Delete selected (${selected})` : 'Delete selected';
         remove.disabled = selected === 0;
@@ -767,28 +597,13 @@
 
       const detailParts = [];
       if (chat.matches.length) detailParts.push(`Matched: ${chat.matches.join(', ')}`);
-      else detailParts.push('No personal keyword match');
+      else detailParts.push('No suggested cleanup filter match');
       if (chat.protectedMatches.length) detailParts.push(`Protected: ${chat.protectedMatches.join(', ')}`);
 
-      const statusClass = chat.protectedMatches.length
-        ? 'vc-pill-protected'
-        : chat.likelyPersonal
-          ? 'vc-pill-personal'
-          : 'vc-pill-review';
+      const statusClass = chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review';
+      const statusText = chat.protectedMatches.length ? 'Protected' : chat.likelyPersonal ? 'Suggested' : 'Review';
 
-      const statusText = chat.protectedMatches.length
-        ? 'Protected'
-        : chat.likelyPersonal
-          ? 'Likely personal'
-          : 'Review';
-
-      info.innerHTML = `
-        <div class="vc-chat-head">
-          <div class="vc-chat-title">${escapeHtml(chat.title)}</div>
-          <span class="vc-pill ${statusClass}">${statusText}</span>
-        </div>
-        <div class="vc-detail">${escapeHtml(detailParts.join(' · '))}</div>
-      `;
+      info.innerHTML = `<div class="vc-chat-head"><div class="vc-chat-title">${escapeHtml(chat.title)}</div><span class="vc-pill ${statusClass}">${statusText}</span></div><div class="vc-detail">${escapeHtml(detailParts.join(' · '))}</div>`;
 
       row.append(checkbox, info);
       list.appendChild(row);
@@ -804,35 +619,159 @@
 
     listWrap.appendChild(list);
 
-    const selectLikely = button('Select likely', 'secondary');
-    selectLikely.onclick = () => {
-      rows.forEach(item => {
-        item.checkbox.checked = item.chat.likelyPersonal;
-      });
+    const selectSuggested = button('Select suggested chats', 'secondary');
+    selectSuggested.onclick = () => {
+      rows.forEach(item => { item.checkbox.checked = item.chat.likelyPersonal; });
       refreshSelection();
     };
 
     const selectAll = button('Select all', 'secondary');
     selectAll.onclick = () => {
-      rows.forEach(item => {
-        item.checkbox.checked = true;
-      });
+      rows.forEach(item => { item.checkbox.checked = true; });
       refreshSelection();
     };
 
     const deselectAll = button('Deselect all', 'secondary');
     deselectAll.onclick = () => {
-      rows.forEach(item => {
-        item.checkbox.checked = false;
-      });
+      rows.forEach(item => { item.checkbox.checked = false; });
       refreshSelection();
     };
 
-    toolbarActions.append(selectLikely, selectAll, deselectAll);
-    toolbar.append(summary, toolbarActions);
-    panel.append(toolbar, listWrap);
+    const manageFilters = button('Manage filters', 'secondary');
 
-    const footer = document.createElement('div');
+    function renderFilterManager() {
+      filterManager.replaceChildren();
+
+      const intro = document.createElement('div');
+      intro.className = 'vc-filter-intro';
+
+      const introText = document.createElement('div');
+      introText.innerHTML = `<div class="vc-filter-intro-title">Manage title filters</div><div class="vc-filter-intro-text">Add words or phrases without editing the script. Suggested filters preselect matching chats. Protected filters keep matching chats from being preselected.</div>`;
+
+      const reset = button('Reset defaults', 'secondary');
+      reset.onclick = () => {
+        saveFilters(defaultFilters());
+        renderFilterManager();
+        refreshSelection();
+      };
+
+      intro.append(introText, reset);
+      filterManager.appendChild(intro);
+
+      const grid = document.createElement('div');
+      grid.className = 'vc-filter-grid';
+
+      function filterCard(type, title, description, placeholder) {
+        const card = document.createElement('div');
+        card.className = 'vc-filter-card';
+
+        const head = document.createElement('div');
+        head.className = 'vc-filter-card-head';
+        head.innerHTML = `<div class="vc-filter-card-title">${escapeHtml(title)}</div><div class="vc-filter-count">${activeFilters[type].length}</div>`;
+
+        const descriptionElement = document.createElement('div');
+        descriptionElement.className = 'vc-filter-description';
+        descriptionElement.textContent = description;
+
+        const inputRow = document.createElement('div');
+        inputRow.className = 'vc-filter-input-row';
+
+        const input = document.createElement('input');
+        input.className = 'vc-input';
+        input.type = 'text';
+        input.placeholder = placeholder;
+        input.autocomplete = 'off';
+
+        const add = button('Add', 'accent');
+
+        function addValue() {
+          const value = normalize(input.value);
+          if (!value || activeFilters[type].includes(value)) {
+            input.value = '';
+            return;
+          }
+          saveFilters({ ...activeFilters, [type]: [...activeFilters[type], value] });
+          renderFilterManager();
+          refreshSelection();
+        }
+
+        add.onclick = addValue;
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            addValue();
+          }
+        });
+
+        inputRow.append(input, add);
+
+        const chips = document.createElement('div');
+        chips.className = 'vc-chip-list';
+
+        for (const value of activeFilters[type]) {
+          const chip = document.createElement('div');
+          chip.className = 'vc-chip';
+
+          const text = document.createElement('span');
+          text.className = 'vc-chip-text';
+          text.textContent = value;
+          text.title = value;
+
+          const removeChip = document.createElement('button');
+          removeChip.type = 'button';
+          removeChip.className = 'vc-chip-remove';
+          removeChip.setAttribute('aria-label', `Remove ${value}`);
+          removeChip.textContent = '×';
+          removeChip.onclick = () => {
+            saveFilters({ ...activeFilters, [type]: activeFilters[type].filter(item => item !== value) });
+            renderFilterManager();
+            refreshSelection();
+          };
+
+          chip.append(text, removeChip);
+          chips.appendChild(chip);
+        }
+
+        card.append(head, descriptionElement, inputRow, chips);
+        return card;
+      }
+
+      grid.append(
+        filterCard('suggested', 'Suggested cleanup filters', 'Chats whose titles match these words or phrases are suggested and preselected unless a protected filter also matches.', 'Add a word or phrase'),
+        filterCard('protected', 'Protected filters', 'Chats whose titles match these words or phrases stay unselected even when a suggested cleanup filter also matches.', 'Add a word or phrase')
+      );
+
+      filterManager.appendChild(grid);
+
+      const doneRow = document.createElement('div');
+      doneRow.style.cssText = 'display:flex;justify-content:flex-end;padding-top:2px;';
+      const done = button('Done', 'accent');
+      done.onclick = () => makeOverlay(uniqueChats().map(classify));
+      doneRow.appendChild(done);
+      filterManager.appendChild(doneRow);
+    }
+
+    manageFilters.onclick = () => {
+      filterMode = !filterMode;
+      filterManager.hidden = !filterMode;
+      listWrap.hidden = filterMode;
+      if (footer) footer.hidden = filterMode;
+      selectSuggested.hidden = filterMode;
+      selectAll.hidden = filterMode;
+      deselectAll.hidden = filterMode;
+      manageFilters.textContent = filterMode ? 'Back to chats' : 'Manage filters';
+
+      if (filterMode) renderFilterManager();
+      else makeOverlay(uniqueChats().map(classify));
+
+      refreshSelection();
+    };
+
+    toolbarActions.append(manageFilters, selectSuggested, selectAll, deselectAll);
+    toolbar.append(summary, toolbarActions);
+    panel.append(toolbar, listWrap, filterManager);
+
+    footer = document.createElement('div');
     footer.className = 'vc-footer';
 
     const status = document.createElement('div');
@@ -848,19 +787,16 @@
     remove = button('Delete selected', 'danger');
     remove.onclick = async () => {
       const selected = rows.filter(item => item.checkbox.checked);
-
       if (!selected.length) {
         status.dataset.state = 'error';
         status.textContent = 'Nothing selected.';
         return;
       }
 
-      const confirmed = confirm(
-        `Delete ${selected.length} selected ${current.name} chat(s)?\n\nThis cannot be undone.`
-      );
+      const confirmed = confirm(`Delete ${selected.length} selected ${current.name} chat(s)?\n\nThis cannot be undone.`);
       if (!confirmed) return;
 
-      const controls = [remove, close, selectLikely, selectAll, deselectAll];
+      const controls = [remove, close, manageFilters, selectSuggested, selectAll, deselectAll];
       for (const control of controls) control.disabled = true;
 
       let deleted = 0;
@@ -870,7 +806,6 @@
       status.dataset.state = '';
       for (const item of selected) {
         status.textContent = `Deleting ${deleted + failed + 1} of ${selected.length} · ${item.chat.title}`;
-
         try {
           await deleteChat(item.chat);
           deleted++;
@@ -913,7 +848,7 @@
     const element = document.createElement('button');
     element.type = 'button';
     element.textContent = text;
-    element.className = `vc-button${variant === 'danger' ? ' vc-button-danger' : ''}`;
+    element.className = `vc-button${variant === 'danger' ? ' vc-button-danger' : variant === 'accent' ? ' vc-button-accent' : ''}`;
     return element;
   }
 
@@ -927,6 +862,7 @@
   }
 
   function scan() {
+    activeFilters = loadFilters();
     makeOverlay(uniqueChats().map(classify));
   }
 
@@ -938,29 +874,8 @@
     launcher.id = 'vanick-cleaner-button';
     launcher.type = 'button';
     launcher.textContent = '🧹 Chat Cleaner';
-    launcher.title = `Review likely personal ${platform().name} chats`;
-    launcher.style.cssText = `
-      position:fixed;
-      right:18px;
-      bottom:18px;
-      z-index:2147483646;
-      display:inline-flex;
-      align-items:center;
-      gap:7px;
-      min-height:38px;
-      padding:8px 13px;
-      border:1px solid ${theme.borderStrong};
-      border-radius:999px;
-      color:${theme.text};
-      background:${theme.panel};
-      box-shadow:0 8px 30px rgba(0,0,0,.18);
-      font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      font-size:12px;
-      font-weight:750;
-      letter-spacing:-.01em;
-      cursor:pointer;
-      transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;
-    `;
+    launcher.title = `Review ${platform().name} chats`;
+    launcher.style.cssText = `position:fixed;right:18px;bottom:18px;z-index:2147483646;display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:8px 13px;border:1px solid ${theme.borderStrong};border-radius:999px;color:${theme.text};background:${theme.panel};box-shadow:0 8px 30px rgba(0,0,0,.18);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:12px;font-weight:750;letter-spacing:-.01em;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;`;
     launcher.onmouseenter = () => {
       launcher.style.transform = 'translateY(-1px)';
       launcher.style.borderColor = theme.accent;
@@ -976,8 +891,5 @@
   }
 
   addLauncher();
-  new MutationObserver(addLauncher).observe(document.documentElement, {
-    childList: true,
-    subtree: true
-  });
+  new MutationObserver(addLauncher).observe(document.documentElement, { childList: true, subtree: true });
 })();
